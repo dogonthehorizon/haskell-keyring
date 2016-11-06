@@ -1,5 +1,5 @@
 name:                keyring
-version:             0.1.0.4
+version:             0.1.0.5
 synopsis:            Keyring access
 description:
   keyring provides access to the system's keyring to securely store passwords.
@@ -35,7 +35,7 @@ source-repository head
 source-repository this
   type:              git
   location:          https://github.com/lunaryorn/haskell-keyring.git
-  tag:               0.1.0.4
+  tag:               0.1.0.5
 
 flag AllBackends
   description:         Try to build as many backends as possible
