@@ -1,4 +1,5 @@
 -- Copyright (c) 2014 Sebastian Wiesner <swiesner@lunaryorn.com>
+-- Copyright (c) 2017 Fernando Freire <dogonthehorizon@gmail.com>
 
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -40,10 +41,10 @@ import System.Keyring.Darwin.Native
 import qualified Data.ByteString.UTF8 as UTF8
 
 import Control.Exception (Exception(..),bracket,throwIO)
-import Control.Monad (liftM,when,unless,void)
+import Control.Monad (when,unless,void)
 import Data.ByteString (ByteString,useAsCStringLen,packCString,packCStringLen)
 import Data.Typeable (Typeable,cast)
-import Foreign.C (CString,CStringLen)
+import Foreign.C (CString)
 import Foreign.Ptr (Ptr,nullPtr)
 import Foreign.Storable (peek)
 import Foreign.Marshal.Alloc (alloca,allocaBytes)
@@ -97,53 +98,49 @@ secKeychainCopyErrorMessageString status =
     getCString s encoding bufferSize buffer = do
       result <- c_CFStringGetCString s buffer bufferSize encoding
       if result
-        then liftM Just (packCString buffer)
+        then fmap Just (packCString buffer)
         else return Nothing
 
 secKeychainFindGenericPassword :: ByteString -> ByteString -> IO (Maybe ByteString)
 secKeychainFindGenericPassword service username =
-  useAsCStringLen service withService
+  useAsCStringLen service $ \(serviceB, serviceL) ->
+    useAsCStringLen username $ \(userB, userL) ->
+      alloca $ \passLenBuffer ->
+        alloca $ \passBuffer -> do
+          result <- c_SecKeychainFindGenericPassword
+                    nullPtr -- Default keychain
+                    (fromIntegral serviceL) serviceB
+                    (fromIntegral userL) userB
+                    passLenBuffer passBuffer
+                    nullPtr -- Ignore the item ref
+
+          bracket (peek passBuffer)
+            (\password -> when (password /= nullPtr)
+                          (void $ c_SecKeychainItemFreeContent nullPtr password))
+            (handleResult result passLenBuffer)
   where
-    withService c_service = useAsCStringLen username (withServiceAndUser c_service)
-    withServiceAndUser c_service c_user = alloca (withPwLen c_service c_user)
-    withPwLen c_service c_user pwlen = alloca (withAll c_service c_user pwlen)
-    withAll :: CStringLen -> CStringLen -> Ptr UInt32 -> Ptr CString -> IO (Maybe ByteString)
-    withAll (c_service_b, c_service_l) (c_user_b, c_user_l) password_l_buf password_buf =
-      do
-        result <- c_SecKeychainFindGenericPassword
-                   nullPtr      -- Default keychain
-                   (fromIntegral c_service_l) c_service_b
-                   (fromIntegral c_user_l) c_user_b
-                   password_l_buf password_buf
-                   nullPtr      -- Ignore the item reference
-        bracket (peek password_buf)
-         (\pw -> when (pw /= nullPtr)
-                 (void $ c_SecKeychainItemFreeContent nullPtr pw))
-         (handleResult result password_l_buf)
     handleResult :: OSStatus -> Ptr UInt32 -> CString -> IO (Maybe ByteString)
     handleResult result password_l_buf password_b = case result of
       _ | result == errSecSuccess -> do
         password_l <- peek password_l_buf
-        liftM Just (packCStringLen (password_b, fromIntegral password_l))
+        fmap Just (packCStringLen (password_b, fromIntegral password_l))
       _ | result == errSecItemNotFound ||
           result == errSecAuthFailed -> return Nothing
       _ -> throwKeychainError result
 
 secKeychainAddGenericPassword :: ByteString -> ByteString -> ByteString -> IO ()
 secKeychainAddGenericPassword service username password =
-  useAsCStringLen service withService
-  where
-    withService c_service = useAsCStringLen username (withServiceAndUser c_service)
-    withServiceAndUser c_service c_username =
-      useAsCStringLen password (withAll c_service c_username)
-    withAll (c_service_b, c_service_l) (c_user_b, c_user_l) (c_pw_b, c_pw_l) = do
-      result <- c_SecKeychainAddGenericPassword
-                nullPtr         -- Default keychain
-                (fromIntegral c_service_l) c_service_b
-                (fromIntegral c_user_l) c_user_b
-                (fromIntegral c_pw_l) c_pw_b
-                nullPtr         -- Ignore the item
-      unless (result == errSecSuccess) (throwKeychainError result)
+  useAsCStringLen service $ \(serviceB, serviceL) ->
+    useAsCStringLen username $ \(userB, userL) ->
+      useAsCStringLen password $ \(passB, passL) -> do
+        result <- c_SecKeychainAddGenericPassword
+                  nullPtr -- Default Keychain
+                  (fromIntegral serviceL) serviceB
+                  (fromIntegral userL) userB
+                  (fromIntegral passL) passB
+                  nullPtr -- Ignore the returned item
+
+        unless (result == errSecSuccess) (throwKeychainError result)
 
 -- |@'setPassword' service username password@ adds @password@ for @username@
 -- to the user's keychain.
