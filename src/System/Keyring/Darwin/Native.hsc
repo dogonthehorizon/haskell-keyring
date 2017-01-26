@@ -82,3 +82,9 @@ foreign import ccall safe "Security/Security.h SecKeychainAddGenericPassword"
                                   -> UInt32 -> CString
                                   -> Ptr SecKeychainItemRef
                                   -> IO OSStatus
+
+foreign import ccall safe "Security/Security.h SecKeychainItemModifyContent"
+  c_SecKeychainItemModifyContent :: SecKeychainItemRef
+                                 -> Ptr ()
+                                 -> UInt32 -> CString
+                                 -> IO OSStatus

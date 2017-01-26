@@ -30,6 +30,7 @@ module System.Keyring.Darwin
          -- * Keychain access
          setPassword
        , getPassword
+       , updatePassword
          -- * Error handling
        , KeychainError(..)
        , OSStatus
@@ -128,6 +129,34 @@ secKeychainFindGenericPassword service username =
           result == errSecAuthFailed -> return Nothing
       _ -> throwKeychainError result
 
+secKeychainFindGenericPasswordRef :: ByteString -> ByteString -> IO SecKeychainItemRef
+secKeychainFindGenericPasswordRef service username =
+  useAsCStringLen service $ \(serviceB, serviceL) ->
+    useAsCStringLen username $ \(userB, userL) ->
+      alloca $ \refBuff -> do
+          result <- c_SecKeychainFindGenericPassword
+                    nullPtr -- Default keychain
+                    (fromIntegral serviceL) serviceB
+                    (fromIntegral userL) userB
+                    nullPtr nullPtr
+                    refBuff -- Ignore the item ref
+
+          if result /= errSecSuccess
+             then throwKeychainError result
+             else peek refBuff
+
+secKeychainItemModifyContent :: ByteString -> ByteString -> ByteString -> IO ()
+secKeychainItemModifyContent service username password = do
+  keychainRef <- secKeychainFindGenericPasswordRef service username
+  useAsCStringLen password $ \(passB, passL) -> do
+    result <- c_SecKeychainItemModifyContent
+              keychainRef
+              nullPtr -- No attributes to update; just the password
+              (fromIntegral passL) passB
+
+    unless (result == errSecSuccess) (throwKeychainError result)
+
+
 secKeychainAddGenericPassword :: ByteString -> ByteString -> ByteString -> IO ()
 secKeychainAddGenericPassword service username password =
   useAsCStringLen service $ \(serviceB, serviceL) ->
@@ -152,6 +181,13 @@ secKeychainAddGenericPassword service username password =
 setPassword :: Service -> Username -> Password -> IO ()
 setPassword (Service service) (Username username) (Password password) =
   secKeychainAddGenericPassword service_bytes username_bytes password_bytes
+  where service_bytes = UTF8.fromString service
+        username_bytes = UTF8.fromString username
+        password_bytes = UTF8.fromString password
+
+updatePassword :: Service -> Username -> Password -> IO ()
+updatePassword (Service service) (Username username) (Password password) =
+  secKeychainItemModifyContent service_bytes username_bytes password_bytes
   where service_bytes = UTF8.fromString service
         username_bytes = UTF8.fromString username
         password_bytes = UTF8.fromString password
