@@ -185,6 +185,13 @@ setPassword (Service service) (Username username) (Password password) =
         username_bytes = UTF8.fromString username
         password_bytes = UTF8.fromString password
 
+-- |@'updatePassword' service username password@ updates @password@ for @username@
+-- to the user's keychain.
+--
+-- @username@ is the name of the user whose password to set.  @service@
+-- identifies the application which sets the password.
+--
+-- This function throws 'KeychainError' if access to the Keychain failed.
 updatePassword :: Service -> Username -> Password -> IO ()
 updatePassword (Service service) (Username username) (Password password) =
   secKeychainItemModifyContent service_bytes username_bytes password_bytes

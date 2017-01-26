@@ -39,6 +39,7 @@ module System.Keyring
          -- * Password storage
        , getPassword
        , setPassword
+       , updatePassword
          -- * Exceptions
        , KeyringError(..)
        , KeyringMissingBackendError(..)
@@ -72,3 +73,14 @@ getPassword = Backend.getPassword
 -- 'KeyringError' if access to the keyring failed.
 setPassword :: Service -> Username -> Password -> IO ()
 setPassword = Backend.setPassword
+
+-- |@'updatePassword' service username password@ updates @password@ in the
+-- default keyring.
+--
+-- @service@ identifies the application which updates the password.
+--
+-- This function throws 'KeyringMissingBackendError' is no keyring
+-- implementation exists for the current system and environment, and
+-- 'KeyringError' if access to the keyring failed.
+updatePassword :: Service -> Username -> Password -> IO ()
+updatePassword = Backend.updatePassword
